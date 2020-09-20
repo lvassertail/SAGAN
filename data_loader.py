@@ -17,6 +17,7 @@ class Data_Loader():
         self.imsize = image_size
         self.batch = batch_size
         self.shuf = shuf
+        self.num_classes = 0
 
     def download_data(self, out_path, url, extract=True, force=False):
         pathlib.Path(out_path).mkdir(exist_ok=True)
@@ -71,49 +72,41 @@ class Data_Loader():
     def load_lsun(self, classes='church_outdoor_train'):
         transforms = self.transform(True, True, True, False)
         dataset = dsets.LSUN(self.path, classes=[classes], transform=transforms)
-        return dataset
+        return dataset, 0
 
     def load_celeb(self):
         transforms = self.transform(True, True, True, True)
         dataset = dsets.ImageFolder(self.path+'/CelebA', transform=transforms)
-        return dataset
+        return dataset, 0
 
     def load_cifar(self):
-        cifar10_train_ds = dsets.CIFAR10(
-            root=self.path+'/cifar-10/', download=True, train=True,
-            transform=transforms.ToTensor() # Convert PIL image to pytorch Tensor
-        )
+        transforms = self.transform(True, True, True, False)
+        cifar10_train_ds = dsets.CIFAR10(root=self.path+'/cifar-10/', download=True, train=True,
+                                         transform=transforms)
+
         print('Number of samples:', len(cifar10_train_ds))
-        return cifar10_train_ds
+        return cifar10_train_ds, 10
 
     def load_gwb(self):
         DATA_URL = 'http://vis-www.cs.umass.edu/lfw/lfw-bush.zip'
         _, dataset_dir = self.download_data(out_path=self.path+'/gwb', url=DATA_URL, extract=True, force=False)
-        im_size = 64
-        tf = transforms.Compose([
-            # Resize to constant spatial dimensions
-            transforms.Resize((im_size, im_size)),
-            # PIL.Image -> torch.Tensor
-            transforms.ToTensor(),
-            # Dynamic range [0,1] -> [-1, 1]
-            transforms.Normalize(mean=(.5,.5,.5), std=(.5,.5,.5)),
-        ])
+        transforms = self.transform(True, True, True, False)
 
-        ds_gwb = dsets.ImageFolder(os.path.dirname(dataset_dir), tf)
-        return ds_gwb
+        ds_gwb = dsets.ImageFolder(os.path.dirname(dataset_dir), transforms)
+        return ds_gwb, 1
 
     def loader(self):
         if self.dataset == 'lsun':
-            dataset = self.load_lsun()
+            dataset, n_classes = self.load_lsun()
         elif self.dataset == 'celeb':
-            dataset = self.load_celeb()
+            dataset, n_classes = self.load_celeb()
         elif self.dataset == 'cifar':
-            dataset = self.load_cifar()
+            dataset, n_classes = self.load_cifar()
         elif self.dataset == 'gwb':
-            dataset = self.load_gwb()
+            dataset, n_classes = self.load_gwb()
 
         loader = torch.utils.data.DataLoader(dataset=dataset,
                                              batch_size=self.batch,
                                              shuffle=self.shuf)
-        return loader, dataset[0][0].shape
+        return loader, n_classes
 

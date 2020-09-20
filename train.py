@@ -1,22 +1,17 @@
 from data_loader import Data_Loader
-from parameter import *
-#from gan import *
-from sagan import *
+from models.sagan import *
 import sys
 import numpy as np
 import torch
-import torchvision
-import torchvision.transforms as tvtf
 import torch.optim as optim
-import IPython.display
+import torch.nn.functional as F
 import tqdm
 import os
 from torch.optim import Optimizer
-from torch.utils.data import DataLoader
-from pathlib import Path
 from torchvision.utils import save_image
-from torch.autograd import Variable
-from inception_score import InceptionScore
+from models.generator import ResNetGenerator
+from models.discriminator import SNResNetProjectionDiscriminator
+from evaluator import Inception
 
 
 def train(hp):
@@ -24,19 +19,17 @@ def train(hp):
     # Show hypers
     print(hp)
 
-    num_epochs = 100
+    num_epochs = 30
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     batch_size = hp['batch_size']
     z_dim = hp['z_dim']
+    im_size = hp['im_size']
 
     # Data loader
-    data_loader = Data_Loader('gwb', './data', 64, batch_size, shuf=True)
-    dl, im_size = data_loader.loader()
-
-    # Fixed input for debugging
-    fixed_z = torch.randn(batch_size, z_dim).cuda()
+    data_loader = Data_Loader('cifar', './data', im_size, batch_size, shuf=True)
+    dl, n_classes = data_loader.loader()
 
     samples_dir = make_folder('samples', hp['version'])
 
@@ -53,8 +46,10 @@ def train(hp):
         gen = torch.load(checkpoint_file_final_G, map_location=device)
         dsc = torch.load(checkpoint_file_final_D, map_location=device)
     else:
-        gen = Generator(im_size, z_dim).to(device)
-        dsc = Discriminator(im_size).to(device)
+        #gen = Generator(im_size, z_dim).to(device)
+        #dsc = Discriminator(im_size).to(device)
+        gen = ResNetGenerator(ch=im_size, dim_z=z_dim, n_classes=n_classes, bottom_width=4).to(device)
+        dsc = SNResNetProjectionDiscriminator(ch=im_size, n_classes=n_classes).to(device)
 
     # optimizers
     gen_optimizer = create_optimizer(gen.parameters(), hp['generator_optimizer'])
@@ -64,7 +59,8 @@ def train(hp):
     #gen_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, gen.parameters()), self.g_lr, [self.beta1, self.beta2])
     #dsc_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, dsc.parameters()), self.d_lr, [self.beta1, self.beta2])
 
-    ins = InceptionScore('inception_v3_google-1a9a5a14.pth')
+    #ins = InceptionScore('inception_v3_google-1a9a5a14.pth')
+    evaluator = Inception(5000, 100, 1, device)
     for epoch_idx in range(num_epochs):
         # We'll accumulate batch losses and show an average once per epoch.
         dsc_losses = []
@@ -72,12 +68,13 @@ def train(hp):
         print(f'--- EPOCH {epoch_idx+1}/{num_epochs} ---')
 
         with tqdm.tqdm(total=len(dl.batch_sampler), file=sys.stdout) as pbar:
-            for batch_idx, (x_data, _) in enumerate(dl):
-                x_data = x_data.to(device)
+            for batch_idx, (x_real, y_real) in enumerate(dl):
+                x_real = x_real.to(device)
+                y_real = y_real.to(device)
                 dsc_loss, gen_loss = train_batch(
                     dsc, gen,
                     dsc_optimizer, gen_optimizer,
-                    x_data)
+                    x_real, y_real)
                 dsc_losses.append(dsc_loss)
                 gen_losses.append(gen_loss)
                 pbar.update()
@@ -91,13 +88,21 @@ def train(hp):
                        os.path.join(checkpoint_dir, 'gan{}_G.pt'.format(epoch_idx + 1)))
             torch.save(dsc.state_dict(),
                        os.path.join(checkpoint_dir, 'gan{}_D.pt'.format(epoch_idx + 1)))
+        if (epoch_idx+1) % hp["model_calc_score"]==0:
+            gen.eval()
             # Sample images
-            fake_images,_,_= gen(fixed_z)
+            #fake_images,_,_= gen(fixed_z)
             #fake_images = gen(fixed_z)
-            save_image(denorm(fake_images.data),
+            fake_images_x, fake_images_y = gen.sample(batch_size, with_grad=False)
+            #fake_images_x = gen.sample(batch_size, with_grad=False)
+            save_image(denorm(fake_images_x.data),
                         os.path.join(samples_dir, '{}_fake.png'.format(epoch_idx + 1)))
-            inception_score = ins.calculate(fake_images, resize=True)
-            print(f'the generated fake images were saved. the Inception Score is: {inception_score}')
+            #inception_score = ins.calculate(fake_images_x, resize=True)
+            #print(f'the generated fake images were saved. the Inception Score is: {inception_score}')
+
+            score, _ = evaluator.eval_gen(gen)
+            print("[%d] evaluated inception score: %.4f" % (epoch_idx + 1, score))
+            gen.train()
 
 def denorm(x):
     out = (x + 1) / 2
@@ -109,9 +114,9 @@ def make_folder(path, version):
         os.makedirs(dir)
     return dir
 
-def train_batch(dsc_model: Discriminator, gen_model: Generator,
+def train_batch_gan(dsc_model: Discriminator, gen_model: Generator,
                 dsc_optimizer: Optimizer, gen_optimizer: Optimizer,
-                x_data: DataLoader):
+                x_data: torch.utils.data.DataLoader):
     """
     Trains a GAN for over one batch, updating both the discriminator and
     generator.
@@ -129,7 +134,7 @@ def train_batch(dsc_model: Discriminator, gen_model: Generator,
     real = dsc_model(x_data)
     fake = dsc_model(sample)
 
-    dsc_loss = dsc_loss_fn(real[0], fake[0])
+    dsc_loss = discriminator_loss_fn(real[0], fake[0])
 
     dsc_loss.backward(retain_graph=True)
     dsc_optimizer.step()
@@ -142,7 +147,7 @@ def train_batch(dsc_model: Discriminator, gen_model: Generator,
     # ====== YOUR CODE: ======
     gen_optimizer.zero_grad()
 
-    gen_loss = gen_loss_fn(dsc_model(sample)[0])
+    gen_loss = generator_loss_fn(dsc_model(sample)[0])
 
     # train the weights using the optimizer
     gen_loss.backward(retain_graph=True)
@@ -150,6 +155,68 @@ def train_batch(dsc_model: Discriminator, gen_model: Generator,
     # ========================
 
     return dsc_loss.item(), gen_loss.item()
+
+def train_batch_resnet_old(dsc_model, gen_model,
+                dsc_optimizer, gen_optimizer,
+                x_real, y_real):
+    """
+    Trains a GAN for over one batch, updating both the discriminator and
+    generator.
+    :return: The discriminator and generator losses.
+    """
+
+    # Discriminator update
+    dsc_optimizer.zero_grad()
+    batch_size = x_real.shape[0]
+    x_fake, y_fake = gen_model.sample(batch_size, with_grad=True)
+
+    dsc_real = dsc_model(x_real, y_real)
+    dsc_fake = dsc_model(x_fake, y_fake)
+
+    dsc_loss = discriminator_loss_fn(dsc_real, dsc_fake)
+
+    dsc_loss.backward(retain_graph=True)
+    dsc_optimizer.step()
+
+    # Generator update
+    gen_optimizer.zero_grad()
+
+    dsc_fake = dsc_model(x_fake, y_fake)
+    gen_loss = generator_loss_fn(dsc_fake)
+
+    # train the weights using the optimizer
+    gen_loss.backward(retain_graph=True)
+    gen_optimizer.step()
+
+    return dsc_loss.item(), gen_loss.item()
+
+def train_batch(dis, gen,
+                opt_dis, opt_gen,
+                x_real, y_real):
+    batchsize = x_real.size(0)
+    device = torch.device('cuda')
+
+    z_fake = torch.randn(batchsize, gen.dim_z, dtype=torch.float, device=device)
+    y_fake = torch.randint(0, gen.n_classes, (batchsize,), device=device, dtype=torch.long)
+    x_fake = gen(batchsize, y=y_fake, z=z_fake)
+    dis_fake = dis(x_fake, y=y_fake)
+    loss_gen = generator_loss_fn(dis_fake)
+    opt_gen.zero_grad()
+    loss_gen.backward()
+    opt_gen.step()
+
+    y_fake = torch.randint(0, gen.n_classes, (batchsize,), device=device, dtype=torch.long)
+    with torch.no_grad():
+        x_fake = gen(batchsize, y=y_fake).detach()
+
+    dis_real = dis(x_real, y=y_real)
+    dis_fake = dis(x_fake, y=y_fake)
+    loss_dis = discriminator_loss_fn(dis_real, dis_fake)
+    opt_dis.zero_grad()
+    loss_dis.backward()
+    opt_dis.step()
+
+    return loss_dis.item(), loss_gen.item()
 
 # Optimizer
 def create_optimizer(model_params, opt_params):
@@ -160,8 +227,19 @@ def create_optimizer(model_params, opt_params):
 
 
 # Loss
-def dsc_loss_fn(y_data, y_generated):
-    return discriminator_loss_fn(y_data, y_generated, hp['data_label'], hp['label_noise'])
+#def dsc_loss_fn(y_data, y_generated):
+#    return discriminator_loss_fn(y_data, y_generated, hp['data_label'], hp['label_noise'])
+
+def discriminator_loss_fn(dsc_real, dsc_fake):
+    d_loss_real = F.relu(1.0 - dsc_real).mean()
+    d_loss_fake = F.relu(1.0 + dsc_fake).mean()
+
+    return d_loss_real + d_loss_fake
+
+def generator_loss_fn(g_out_fake):
+    g_loss_fake = -g_out_fake.mean()
+
+    return g_loss_fake
 
 def gen_loss_fn(y_generated):
     return generator_loss_fn(y_generated, hp['data_label'])
@@ -182,9 +260,11 @@ def gan_hyperparams():
     )
     # TODO: Tweak the hyperparameters to train your GAN.
     # ====== YOUR CODE: ======
-    hypers['version'] = 'sagan1'
+    hypers['version'] = 'resnet_cifar64'
     hypers["batch_size"] = 64
+    hypers["im_size"] = 64
     hypers["model_save_epoch"] = 10
+    hypers["model_calc_score"] = 1
     hypers["z_dim"] = 128
     hypers["data_label"] = 1
     hypers["label_noise"] = 0.3
@@ -197,8 +277,8 @@ def gan_hyperparams():
 
     #sagan
     hypers["discriminator_optimizer"]["type"] = hypers["generator_optimizer"]["type"] = 'Adam'
-    hypers["discriminator_optimizer"]["lr"] = 0.0004
-    hypers["generator_optimizer"]["lr"] = 0.0001
+    hypers["discriminator_optimizer"]["lr"] = 0.0002  # TTUR - a slower update rule is used for the generator
+    hypers["generator_optimizer"]["lr"] = 0.0002  # TTUR - a faster update rule is used for the discriminator
     hypers["discriminator_optimizer"]["weight_decay"] = hypers["generator_optimizer"]["weight_decay"] = 0
     hypers["discriminator_optimizer"]["betas"] = hypers["generator_optimizer"]["betas"] = (0.0, 0.9)
 
