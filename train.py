@@ -9,8 +9,11 @@ import tqdm
 import os
 from torch.optim import Optimizer
 from torchvision.utils import save_image
-from models.generator import ResNetGenerator
-from models.discriminator import SNResNetProjectionDiscriminator
+from models.generator import BaselineGenerator
+from models.generator import SNGenerator
+from models.generator_old import ResNetGenerator
+from models.discriminator import SNProjectionDiscriminator
+from models.discriminator_old import SNResNetProjectionDiscriminator
 from evaluator import Inception
 
 
@@ -19,7 +22,7 @@ def train(hp):
     # Show hypers
     print(hp)
 
-    num_epochs = 30
+    num_epochs = hp["num_epochs"]
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -37,23 +40,24 @@ def train(hp):
     checkpoint_dir = make_folder('checkpoints', hp['version'])
     checkpoint_file_final_G = os.path.join(checkpoint_dir, 'gan_final_G.pt')
     checkpoint_file_final_D = os.path.join(checkpoint_dir, 'gan_final_D.pt')
-    #if os.path.isfile(f'{checkpoint_file}.pt'):
-    #    os.remove(f'{checkpoint_file}.pt')
 
     # Model
     if os.path.isfile(checkpoint_file_final_G) and os.path.isfile(checkpoint_file_final_D):
         print('*** Loading final checkpoint file instead of training')
         gen = torch.load(checkpoint_file_final_G, map_location=device)
-        dsc = torch.load(checkpoint_file_final_D, map_location=device)
+        dis = torch.load(checkpoint_file_final_D, map_location=device)
     else:
-        #gen = Generator(im_size, z_dim).to(device)
-        #dsc = Discriminator(im_size).to(device)
-        gen = ResNetGenerator(ch=im_size, dim_z=z_dim, n_classes=n_classes, bottom_width=4).to(device)
-        dsc = SNResNetProjectionDiscriminator(ch=im_size, n_classes=n_classes).to(device)
+        #gen = SNGenerator(ch=im_size, dim_z=z_dim, n_classes=n_classes).to(device)
+        gen = BaselineGenerator(ch=im_size, dim_z=z_dim, n_classes=n_classes).to(device)
+        #gen1 = ResNetGenerator(ch=im_size, dim_z=z_dim, n_classes=n_classes).to(device)
+        dis = SNProjectionDiscriminator(ch=im_size, n_classes=n_classes).to(device)
+        #dis1 = SNResNetProjectionDiscriminator(ch=im_size, n_classes=n_classes).to(device)
 
     # optimizers
     gen_optimizer = create_optimizer(gen.parameters(), hp['generator_optimizer'])
-    dsc_optimizer = create_optimizer(dsc.parameters(), hp['discriminator_optimizer'])
+    dic_optimizer = create_optimizer(dis.parameters(), hp['discriminator_optimizer'])
+    #gen_optimizer1 = create_optimizer(gen1.parameters(), hp['generator_optimizer'])
+    #dic_optimizer1 = create_optimizer(dis1.parameters(), hp['discriminator_optimizer'])
 
     # optimizers - sagan
     #gen_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, gen.parameters()), self.g_lr, [self.beta1, self.beta2])
@@ -72,9 +76,13 @@ def train(hp):
                 x_real = x_real.to(device)
                 y_real = y_real.to(device)
                 dsc_loss, gen_loss = train_batch(
-                    dsc, gen,
-                    dsc_optimizer, gen_optimizer,
+                    dis, gen,
+                    dic_optimizer, gen_optimizer,
                     x_real, y_real)
+                #dsc_loss1, gen_loss1 = train_batch(
+                #    dis1, gen1,
+                #    dic_optimizer1, gen_optimizer1,
+                #    x_real, y_real)
                 dsc_losses.append(dsc_loss)
                 gen_losses.append(gen_loss)
                 pbar.update()
@@ -86,19 +94,14 @@ def train(hp):
         if (epoch_idx+1) % hp["model_save_epoch"]==0:
             torch.save(gen.state_dict(),
                        os.path.join(checkpoint_dir, 'gan{}_G.pt'.format(epoch_idx + 1)))
-            torch.save(dsc.state_dict(),
+            torch.save(dis.state_dict(),
                        os.path.join(checkpoint_dir, 'gan{}_D.pt'.format(epoch_idx + 1)))
         if (epoch_idx+1) % hp["model_calc_score"]==0:
             gen.eval()
             # Sample images
-            #fake_images,_,_= gen(fixed_z)
-            #fake_images = gen(fixed_z)
             fake_images_x, fake_images_y = gen.sample(batch_size, with_grad=False)
-            #fake_images_x = gen.sample(batch_size, with_grad=False)
             save_image(denorm(fake_images_x.data),
                         os.path.join(samples_dir, '{}_fake.png'.format(epoch_idx + 1)))
-            #inception_score = ins.calculate(fake_images_x, resize=True)
-            #print(f'the generated fake images were saved. the Inception Score is: {inception_score}')
 
             score, _ = evaluator.eval_gen(gen)
             print("[%d] evaluated inception score: %.4f" % (epoch_idx + 1, score))
@@ -156,7 +159,7 @@ def train_batch_gan(dsc_model: Discriminator, gen_model: Generator,
 
     return dsc_loss.item(), gen_loss.item()
 
-def train_batch_resnet_old(dsc_model, gen_model,
+def train_batch(dsc_model, gen_model,
                 dsc_optimizer, gen_optimizer,
                 x_real, y_real):
     """
@@ -190,7 +193,7 @@ def train_batch_resnet_old(dsc_model, gen_model,
 
     return dsc_loss.item(), gen_loss.item()
 
-def train_batch(dis, gen,
+def train_batch_resnet_new(dis, gen,
                 opt_dis, opt_gen,
                 x_real, y_real):
     batchsize = x_real.size(0)
@@ -225,11 +228,6 @@ def create_optimizer(model_params, opt_params):
     opt_params.pop('type')
     return optim.__dict__[optimizer_type](model_params, **opt_params)
 
-
-# Loss
-#def dsc_loss_fn(y_data, y_generated):
-#    return discriminator_loss_fn(y_data, y_generated, hp['data_label'], hp['label_noise'])
-
 def discriminator_loss_fn(dsc_real, dsc_fake):
     d_loss_real = F.relu(1.0 - dsc_real).mean()
     d_loss_fake = F.relu(1.0 + dsc_fake).mean()
@@ -260,7 +258,8 @@ def gan_hyperparams():
     )
     # TODO: Tweak the hyperparameters to train your GAN.
     # ====== YOUR CODE: ======
-    hypers['version'] = 'resnet_cifar64'
+    hypers['version'] = 'cifar64_sn_d_ttur' # next - cifar64_baseline_sn_on_d
+    hypers["num_epochs"] = 30
     hypers["batch_size"] = 64
     hypers["im_size"] = 64
     hypers["model_save_epoch"] = 10
@@ -277,8 +276,8 @@ def gan_hyperparams():
 
     #sagan
     hypers["discriminator_optimizer"]["type"] = hypers["generator_optimizer"]["type"] = 'Adam'
-    hypers["discriminator_optimizer"]["lr"] = 0.0002  # TTUR - a slower update rule is used for the generator
-    hypers["generator_optimizer"]["lr"] = 0.0002  # TTUR - a faster update rule is used for the discriminator
+    hypers["discriminator_optimizer"]["lr"] = 0.0004  # TTUR - a slower update rule is used for the generator
+    hypers["generator_optimizer"]["lr"] = 0.0001  # TTUR - a faster update rule is used for the discriminator
     hypers["discriminator_optimizer"]["weight_decay"] = hypers["generator_optimizer"]["weight_decay"] = 0
     hypers["discriminator_optimizer"]["betas"] = hypers["generator_optimizer"]["betas"] = (0.0, 0.9)
 
