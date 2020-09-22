@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.conditional_batch_norm import CategoricalConditionalBatchNorm
-from models.conditional_batch_norm import BatchNorm2d
+from models.conditional_batch_norm import ConditionalBatchNorm
 from models.layers import *
 
 class BaseGenBlock(nn.Module):
@@ -11,8 +10,8 @@ class BaseGenBlock(nn.Module):
 
         self.init_conv(in_channels, out_channels)
 
-        self.b1 = CategoricalConditionalBatchNorm(in_channels, n_classes)
-        self.b2 = CategoricalConditionalBatchNorm(out_channels, n_classes)
+        self.b1 = ConditionalBatchNorm(in_channels, n_classes)
+        self.b2 = ConditionalBatchNorm(out_channels, n_classes)
 
     def init_conv(self, in_channels, out_channels):
         self.c1 = conv2d(in_channels, out_channels, ksize=3, pad=1, init_gain=(2**0.5))
@@ -55,7 +54,7 @@ class BaselineGenerator(nn.Module):
 
         self.initLayers(ch, n_classes)
 
-        self.b6 = BatchNorm2d(ch)
+        self.b6 = nn.BatchNorm2d(ch)
 
     def initLayers(self, ch, n_classes):
         self.l1 = linear(self.dim_z, (self.bottom_width ** 2) * ch * 16)
