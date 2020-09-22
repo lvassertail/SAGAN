@@ -24,25 +24,15 @@ class FirstDiscriminatorBlock(nn.Module):
         sc = F.avg_pool2d(sc, 2)
         return h + sc
 
-class DiscriminatorBlock(nn.Module):
+class DiscriminatorBlock(FirstDiscriminatorBlock):
     def __init__(self, in_channels, out_channels):
-        super().__init__()
-
-        self.c1 = sn_conv2d(in_channels, in_channels, ksize=3, pad=1, init_gain=(2**0.5))
-        self.c2 = sn_conv2d(in_channels, out_channels, ksize=3, pad=1, init_gain=(2**0.5))
-        self.c_sc = sn_conv2d(in_channels, out_channels, ksize=1, pad=0, init_gain=1.0)
+        super().__init__(in_channels, out_channels)
 
     def forward(self, x):
         h = x
         h = F.relu(h)
-        h = self.c1(h)
-        h = F.relu(h)
-        h = self.c2(h)
-        h = F.avg_pool2d(h, 2)
 
-        sc = self.c_sc(x)
-        sc = F.avg_pool2d(sc, 2)
-        return h + sc
+        return super(DiscriminatorBlock, self).forward(h)
 
 class SNProjectionDiscriminator(nn.Module):
     def __init__(self, ch=64, n_classes=10):
