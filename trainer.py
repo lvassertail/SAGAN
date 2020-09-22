@@ -60,6 +60,8 @@ class Trainer():
                 torch.save(self.dis.state_dict(),
                            os.path.join(self.checkpoint_dir, 'gan{}_D.pt'.format(epoch_idx + 1)))
 
+                print("[%d] Checkpoint was saved" % (epoch_idx + 1))
+
             self.gen.eval()
 
             if (epoch_idx+1) % self.model_calc_score == 0:
@@ -72,6 +74,8 @@ class Trainer():
                 fake = self.gen_samples()
                 save_image(fake, os.path.join(self.samples_dir, '{}_fake.png'.format(epoch_idx + 1)),
                             nrow=self.n_sample_row, padding=2)
+
+                print("[%d] Sample image was saved" % (epoch_idx + 1))
 
             self.gen.train()
 
