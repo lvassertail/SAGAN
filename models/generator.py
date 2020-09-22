@@ -65,12 +65,7 @@ class BaselineGenerator(nn.Module):
         self.block5 = BaseGenBlock(ch * 2, ch, n_classes=n_classes)
         self.l6 = conv2d(ch, 3, ksize=3, pad=1, init_gain=1)
 
-    def forward(self, batchsize=64, z=None, y=None):
-        anyparam = next(self.parameters())
-        if z is None:
-            z = torch.randn(batchsize, self.dim_z, dtype=anyparam.dtype, device=anyparam.device)
-        if y is None and self.n_classes > 0:
-            y = torch.randint(0, self.n_classes, (batchsize,), device=anyparam.device, dtype=torch.long)
+    def forward(self, z, y):
 
         h = z
         h = self.l1(h)
@@ -83,30 +78,6 @@ class BaselineGenerator(nn.Module):
         h = F.relu(h)
         h = torch.tanh(self.l6(h))
         return h
-
-    def sample(self, n_samples, with_grad=False):
-        """
-        Samples from the Generator.
-        :param n_samples: Number of instance-space samples to generate.
-        :param with_grad: Whether the returned samples should track
-        gradients or not. I.e., whether they should be part of the generator's
-        computation graph or standalone tensors.
-        :return: A batch of samples, shape (N,C,H,W).
-        """
-        device = next(self.parameters()).device
-
-        torch.autograd.set_grad_enabled(with_grad)
-
-        sample_dim = [n_samples, self.dim_z]
-
-        z_fake = torch.randn(sample_dim, dtype=torch.float, device=device, requires_grad=with_grad)
-        y_fake = torch.randint(0, self.n_classes, (n_samples,), device=device, dtype=torch.long)
-        x_fake = self.forward(n_samples, z=z_fake, y=y_fake)
-
-        torch.autograd.set_grad_enabled(True)
-
-        return x_fake, y_fake
-
 
 class SNGenerator(BaselineGenerator):
     def __init__(self, ch=64, dim_z=128, n_classes=10):
