@@ -8,14 +8,16 @@ def get_parameters():
     parser = argparse.ArgumentParser()
 
     # Model hyper-parameters
-    parser.add_argument('--model', type=str, default='sagan', choices=['baseline', 'sn_on_g_d', 'sn_on_g_d_ttur', 'sagan16', 'sagan32'])
-    parser.add_argument('--im_size', type=int, default=64)
+    parser.add_argument('--model', type=str, default='sagan', choices=['baseline', 'sn_on_g_d', 'sn_on_g_d_ttur', 'sagan64_attn32', 'sagan32_sagan16'])
+    parser.add_argument('--im_size', type=int, default=32)
     parser.add_argument('--z_dim', type=int, default=128)
-    parser.add_argument('--g_ch', type=int, default=64)
-    parser.add_argument('--d_ch', type=int, default=64)
-    parser.add_argument('--version', type=str, default='sagan')
+    parser.add_argument('--g_ch', type=int, default=256)
+    parser.add_argument('--d_ch', type=int, default=128)
 
     # Training setting
+    parser.add_argument('--version', type=str, default='sagan')
+    parser.add_argument('--load_checkpoint', type=str2bool, default=False)
+    parser.add_argument('--final_checkpoint_name', type=str, default='sagan')
     parser.add_argument('--num_epochs', type=int, default=30)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--optimizer_type', type=str, default='Adam')
@@ -27,7 +29,7 @@ def get_parameters():
     parser.add_argument('--beta2', type=float, default=0.9)
 
     # Misc
-    parser.add_argument('--dataset', type=str, default='cifar', choices=['lsun', 'cifar'])
+    parser.add_argument('--dataset', type=str, default='cifar', choices=['lsun', 'cifar', 'gwb', 'celeb'])
     parser.add_argument('--use_tensorboard', type=str2bool, default=False)
 
     # Path
