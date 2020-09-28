@@ -8,16 +8,17 @@ def get_parameters():
     parser = argparse.ArgumentParser()
 
     # Model hyper-parameters
-    parser.add_argument('--model', type=str, default='sagan', choices=['baseline', 'sn_on_g_d', 'sn_on_g_d_ttur', 'sagan64_attn32', 'sagan32_sagan16'])
-    parser.add_argument('--im_size', type=int, default=32)
+    parser.add_argument('--model', type=str, default='sagan', choices=['baseline', 'sn_on_g_d', 'sn_on_g_d_ttur', 'sagan'])
+    parser.add_argument('--im_size', type=int, default=64) #32
     parser.add_argument('--z_dim', type=int, default=128)
-    parser.add_argument('--g_ch', type=int, default=256)
-    parser.add_argument('--d_ch', type=int, default=128)
+    parser.add_argument('--g_ch', type=int, default=64) #256
+    parser.add_argument('--d_ch', type=int, default=64) #128
+    parser.add_argument('--feat_k', type=int, default=32)
 
     # Training setting
     parser.add_argument('--version', type=str, default='sagan')
     parser.add_argument('--load_checkpoint', type=str2bool, default=False)
-    parser.add_argument('--final_checkpoint_name', type=str, default='sagan')
+    parser.add_argument('--final_checkpoint_name', type=str, default='sagan.pt')
     parser.add_argument('--num_epochs', type=int, default=30)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--optimizer_type', type=str, default='Adam')
@@ -40,9 +41,8 @@ def get_parameters():
     #parser.add_argument('--attn_path', type=str, default='./attn')
 
     # epoch size
-    parser.add_argument('--model_calc_score', type=int, default=1)
-    parser.add_argument('--sample_save_epoch', type=int, default=10)
-    parser.add_argument('--model_save_epoch', type=float, default=10)
+    parser.add_argument('--calc_score_step', type=int, default=500)
+    parser.add_argument('--model_save_step', type=float, default=15000)
 
 
     return parser.parse_args()

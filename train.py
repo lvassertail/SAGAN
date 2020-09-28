@@ -28,8 +28,8 @@ def train():
     evaluator = Inception(5000, 100, 1, device)
 
     trainer = Trainer(dl, gen, dis, gen_optimizer, dis_optimizer, config.num_epochs,
-                      evaluator, checkpoint_dir, samples_dir, config.model_save_epoch,
-                      config.model_calc_score, config.sample_save_epoch, config.version,
+                      evaluator, checkpoint_dir, samples_dir, config.model_save_step,
+                      config.calc_score_step, config.version,
                       device, checkpoint_data)
 
     trainer.train()
@@ -54,7 +54,6 @@ def create_model(checkpoint_dir, n_classes, device):
         if config.im_size == 32:
             gen = SNGenerator32(ch=config.g_ch, dim_z=config.z_dim, n_classes=n_classes).to(device)
             dis = SNProjectionDiscriminator32(ch=config.d_ch, n_classes=n_classes).to(device)
-
         else:
             gen = SNGenerator(ch=config.g_ch, dim_z=config.z_dim, n_classes=n_classes).to(device)
             dis = SNProjectionDiscriminator(ch=config.d_ch, n_classes=n_classes).to(device)
@@ -73,11 +72,11 @@ def create_model(checkpoint_dir, n_classes, device):
 
         elif model_type == 'sagan':
             if config.im_size == 32:
-                gen = SaganGenerator32(ch=config.g_ch, dim_z=config.z_dim, n_classes=n_classes).to(device)
-                dis = SaganDiscriminator32(ch=config.d_ch, n_classes=n_classes).to(device)
+                gen = SaganGenerator32(feat_k=config.feat_k, ch=config.g_ch, dim_z=config.z_dim, n_classes=n_classes).to(device)
+                dis = SaganDiscriminator32(feat_k=config.feat_k, ch=config.d_ch, n_classes=n_classes).to(device)
             else:
-                gen = SaganGenerator(ch=config.g_ch, dim_z=config.z_dim, n_classes=n_classes).to(device)
-                dis = SaganDiscriminator(ch=config.d_ch, n_classes=n_classes).to(device)
+                gen = SaganGenerator(feat_k=config.feat_k, ch=config.g_ch, dim_z=config.z_dim, n_classes=n_classes).to(device)
+                dis = SaganDiscriminator(feat_k=config.feat_k, imsize=config.im_size, ch=config.d_ch, n_classes=n_classes).to(device)
 
 
     # optimizers

@@ -8,10 +8,12 @@ import torch.nn.functional as F
 from torchvision.utils import save_image
 from utils import *
 
+
 class Trainer():
+
     def __init__(self, data_loader, gen, dis, gen_optimizer, dis_optimizer, num_epochs,
-                 evaluator, checkpoint_dir, samples_dir, model_save_epoch,
-                 model_calc_score, sample_save_epoch, version, device, checkpoint_data):
+                 evaluator, checkpoint_dir, samples_dir, model_save_step,
+                 calc_score_step, version, device, checkpoint_data):
 
         self.data_loader = data_loader
         self.batch_size = data_loader.batch_size
@@ -24,9 +26,8 @@ class Trainer():
         self.num_epochs = num_epochs
         self.evaluator = evaluator
 
-        self.model_save_epoch = model_save_epoch
-        self.model_calc_score = model_calc_score
-        self.sample_save_epoch = sample_save_epoch
+        self.model_save_step = model_save_step
+        self.calc_score_step = calc_score_step
         self.checkpoint_dir = checkpoint_dir
         self.samples_dir = samples_dir
 
@@ -41,6 +42,8 @@ class Trainer():
         self.prev_scores_steps=checkpoint_data.prev_scores_steps
         self.prev_scores=checkpoint_data.prev_scores
 
+        self.log_path = os.path.join(self.checkpoint_dir, "log")
+
     def train(self):
 
         self.gen.train()
@@ -50,64 +53,97 @@ class Trainer():
 
         saved_scores_steps = []
         saved_scores_steps.extend(self.prev_scores_steps)
-        scores = []
-        scores.extend(self.prev_scores)
+        saved_scores = []
+        saved_scores.extend(self.prev_scores)
+
+        epoch_logs = []
 
         for epoch_idx in range(self.start_from_epoch, self.num_epochs + self.start_from_epoch):
             # We'll accumulate batch losses and show an average once per epoch.
             dsc_losses = []
             gen_losses = []
-            print(f'--- EPOCH {epoch_idx+1}/{self.num_epochs + self.start_from_epoch} ---')
+            self.print_and_save(f'--- EPOCH {epoch_idx+1}/{self.num_epochs + self.start_from_epoch} ---', epoch_logs)
 
             with tqdm.tqdm(total=len(self.data_loader.batch_sampler), file=sys.stdout) as pbar:
                 for batch_idx, (x_real, y_real) in enumerate(self.data_loader):
                     step_idx += 1
+
                     x_real = x_real.to(self.device)
                     y_real = y_real.to(self.device)
+
                     dis_loss, gen_loss = self.train_batch(x_real, y_real)
+
                     dsc_losses.append(dis_loss)
                     gen_losses.append(gen_loss)
+
+                    self.evaluate_model(epoch_idx, saved_scores_steps, saved_scores, step_idx, epoch_logs)
+
                     pbar.update()
 
             dsc_avg_loss, gen_avg_loss = np.mean(dsc_losses), np.mean(gen_losses)
-            print(f'Discriminator loss: {dsc_avg_loss}')
-            print(f'Generator loss:     {gen_avg_loss}')
+            self.print_and_save(f'Discriminator loss: {dsc_avg_loss}', epoch_logs)
+            self.print_and_save(f'Generator loss:     {gen_avg_loss}', epoch_logs)
 
-            self.gen.eval()
+            self.write_to_logs(epoch_logs)
+            epoch_logs.clear()
 
-            if (epoch_idx - self.start_from_epoch + 1) % self.model_calc_score == 0:
+        # last save
+        self.calc_score(epoch_idx, epoch_logs, saved_scores, saved_scores_steps, step_idx)
+        self.save_model(epoch_idx, epoch_logs, saved_scores, saved_scores_steps, step_idx)
 
-                score, _ = self.evaluator.eval_gen(self.gen)
-                print("[%d] evaluated inception score: %.4f" % (epoch_idx + 1, score))
+    def evaluate_model(self, epoch_idx, saved_scores_steps, saved_scores, step_idx, epoch_logs):
 
-                scores.append(score)
-                saved_scores_steps.append(step_idx)
+        self.gen.eval()
 
-            if (epoch_idx - self.start_from_epoch + 1) % self.model_save_epoch == 0:
-                torch.save({'epoch': epoch_idx + 1,
-                            'step': step_idx,
-                            'saved_scores_steps': saved_scores_steps,
-                            'scores': scores,
-                            'gen_state_dict': self.gen.state_dict(),
-                            'gen_optimizer_state_dict': self.gen_optimizer.state_dict(),
-                            'dis_state_dict': self.dis.state_dict(),
-                            'dis_optimizer_state_dict': self.dis_optimizer.state_dict()},
-                        os.path.join(self.checkpoint_dir,
-                                    '{}_{}.pt'.format(self.version, epoch_idx + 1)))
+        current_step = step_idx - self.start_from_step
 
-                save_scores_plot(self.checkpoint_dir, self.version, saved_scores_steps , scores, epoch_idx + 1)
-                print("[%d] Checkpoint and plot were saved" % (epoch_idx + 1))
+        if current_step % self.calc_score_step == 0:
+            self.calc_score(epoch_idx, epoch_logs, saved_scores, saved_scores_steps, step_idx)
 
-            if (epoch_idx - self.start_from_epoch + 1) % self.sample_save_epoch == 0:
+        if current_step % self.model_save_step == 0:
+            self.save_model(epoch_idx, epoch_logs, saved_scores, saved_scores_steps, step_idx)
 
-                fake = self.gen_samples()
-                save_image(fake, os.path.join(self.samples_dir, '{}_fake.png'.format(epoch_idx + 1)),
-                            nrow=self.n_sample_row, padding=2)
+        self.gen.train()
 
-                print("[%d] Sample image was saved" % (epoch_idx + 1))
+    def save_model(self, epoch_idx, epoch_logs, saved_scores, saved_scores_steps, step_idx):
 
-            self.gen.train()
+        # save model
+        torch.save({'epoch': epoch_idx + 1,
+                    'step': step_idx,
+                    'saved_scores_steps': saved_scores_steps,
+                    'scores': saved_scores,
+                    'gen_state_dict': self.gen.state_dict(),
+                    'gen_optimizer_state_dict': self.gen_optimizer.state_dict(),
+                    'dis_state_dict': self.dis.state_dict(),
+                    'dis_optimizer_state_dict': self.dis_optimizer.state_dict()},
+                   os.path.join(self.checkpoint_dir,
+                                '{}_{}.pt'.format(self.version, epoch_idx + 1)))
 
+        # save plot
+        save_scores_plot(self.checkpoint_dir, self.version, saved_scores_steps, saved_scores, epoch_idx + 1)
+        self.print_and_save("[%d] Checkpoint and plot were saved" % (epoch_idx + 1), epoch_logs)
+
+        # save sample
+        fake = self.gen_samples()
+        save_image(fake, os.path.join(self.samples_dir, '{}_fake.png'.format(epoch_idx + 1)),
+               nrow=self.n_sample_row, padding=2)
+        self.print_and_save("[%d] Sample image was saved" % (epoch_idx + 1), epoch_logs)
+
+    def calc_score(self, epoch_idx, epoch_logs, saved_scores, saved_scores_steps, step_idx):
+        score, _ = self.evaluator.eval_gen(self.gen)
+        self.print_and_save("[%d] evaluated inception score: %.4f" % (epoch_idx + 1, score), epoch_logs)
+        saved_scores.append(score)
+        saved_scores_steps.append(step_idx)
+
+    @staticmethod
+    def print_and_save(log, epoch_logs):
+        print(log)
+        epoch_logs.append(log)
+
+    def write_to_logs(self, messages):
+        with open(self.log_path, 'a') as log_file:
+            for i in range(len(messages)):
+                log_file.write(messages[i] + '\n')
 
     def gen_samples(self):
         with torch.no_grad():
