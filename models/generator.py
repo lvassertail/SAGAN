@@ -47,28 +47,67 @@ class SpectralNormGenBlock(BaseGenBlock):
         self.c_sc = sn_conv2d(in_channels, out_channels, ksize=1, pad=0, init_gain=1.0)
 
 
-class BaselineGenerator(nn.Module):
-    def __init__(self, ch=64, dim_z=128, n_classes=10):
+def init_gen_layers_64(ch, n_classes, dim_z, bottom_width):
+
+    blocks = torch.nn.ModuleList()
+    l = linear(dim_z, (bottom_width ** 2) * ch * 16)
+    blocks.append(BaseGenBlock(ch * 16, ch * 8, n_classes=n_classes))
+    blocks.append(BaseGenBlock(ch * 8, ch * 4, n_classes=n_classes))
+    blocks.append(BaseGenBlock(ch * 4, ch * 2, n_classes=n_classes))
+    blocks.append(BaseGenBlock(ch * 2, ch, n_classes=n_classes))
+    last_conv = conv2d(ch, 3, ksize=3, pad=1, init_gain=1)
+
+    return blocks, l, last_conv
+
+
+def init_gen_layers_sn_64(ch, n_classes, dim_z, bottom_width):
+
+    blocks = torch.nn.ModuleList()
+    l = sn_linear(dim_z, (bottom_width ** 2) * ch * 16)
+    blocks.append(SpectralNormGenBlock(ch * 16, ch * 8, n_classes=n_classes))
+    blocks.append(SpectralNormGenBlock(ch * 8, ch * 4, n_classes=n_classes))
+    blocks.append(SpectralNormGenBlock(ch * 4, ch * 2, n_classes=n_classes))
+    blocks.append(SpectralNormGenBlock(ch * 2, ch, n_classes=n_classes))
+    last_conv = sn_conv2d(ch, 3, ksize=3, pad=1, init_gain=1)
+
+    return blocks, l, last_conv
+
+
+def init_gen_layers_32(ch, n_classes, dim_z, bottom_width):
+
+    blocks = torch.nn.ModuleList()
+    l = linear(dim_z, (bottom_width ** 2) * ch, l_bias=False)
+    blocks.append(BaseGenBlock(ch, ch, n_classes=n_classes))
+    blocks.append(BaseGenBlock(ch, ch, n_classes=n_classes))
+    blocks.append(BaseGenBlock(ch, ch, n_classes=n_classes))
+    last_conv = conv2d(ch, 3, ksize=3, pad=1, init_gain=1)
+
+    return blocks, l, last_conv
+
+
+def init_gen_layers_sn_32(ch, n_classes, dim_z, bottom_width):
+
+    blocks = torch.nn.ModuleList()
+    l = sn_linear(dim_z, (bottom_width ** 2) * ch, l_bias=False)
+    blocks.append(SpectralNormGenBlock(ch, ch, n_classes=n_classes))
+    blocks.append(SpectralNormGenBlock(ch, ch, n_classes=n_classes))
+    blocks.append(SpectralNormGenBlock(ch, ch, n_classes=n_classes))
+    last_conv = sn_conv2d(ch, 3, ksize=3, pad=1, init_gain=1)
+
+    return blocks, l, last_conv
+
+
+class BaseGenerator(nn.Module):
+    def __init__(self, init_gen_layers_func, ch, dim_z=128, n_classes=10):
         super().__init__()
 
         self.bottom_width = 4
         self.dim_z = dim_z
         self.n_classes = n_classes
 
-        self.blocks = torch.nn.ModuleList()
-
-        self.initLayers(ch, n_classes)
+        self.blocks, self.linear, self.last_conv = init_gen_layers_func(ch, n_classes, dim_z, self.bottom_width)
 
         self.bn = nn.BatchNorm2d(ch)
-
-    def initLayers(self, ch, n_classes):
-
-        self.linear = linear(self.dim_z, (self.bottom_width ** 2) * ch * 16)
-        self.blocks.append(BaseGenBlock(ch * 16, ch * 8, n_classes=n_classes))
-        self.blocks.append(BaseGenBlock(ch * 8, ch * 4, n_classes=n_classes))
-        self.blocks.append(BaseGenBlock(ch * 4, ch * 2, n_classes=n_classes))
-        self.blocks.append(BaseGenBlock(ch * 2, ch, n_classes=n_classes))
-        self.last_conv = conv2d(ch, 3, ksize=3, pad=1, init_gain=1)
 
     def forward(self, z, y):
         h = z
@@ -83,79 +122,67 @@ class BaselineGenerator(nn.Module):
         h = torch.tanh(self.last_conv(h))
         return h
 
-class BaselineGenerator32(BaselineGenerator):
-    def __init__(self, ch=256, dim_z=128, n_classes=10):
-        super().__init__(ch, dim_z, n_classes)
 
-    def initLayers(self, ch, n_classes):
-        self.linear = linear(self.dim_z, (self.bottom_width ** 2) * ch, l_bias=False)
-        self.blocks.append(BaseGenBlock(ch, ch, n_classes=n_classes))
-        self.blocks.append(BaseGenBlock(ch, ch, n_classes=n_classes))
-        self.blocks.append(BaseGenBlock(ch, ch, n_classes=n_classes))
-        self.last_conv = conv2d(ch, 3, ksize=3, pad=1, init_gain=1)
-
-
-class SNGenerator(BaselineGenerator):
+class BaselineGenerator(BaseGenerator):
     def __init__(self, ch=64, dim_z=128, n_classes=10):
-        super().__init__(ch, dim_z, n_classes)
-
-    def initLayers(self, ch, n_classes):
-        self.linear = sn_linear(self.dim_z, (self.bottom_width ** 2) * ch * 16)
-        self.blocks.append(SpectralNormGenBlock(ch * 16, ch * 8, n_classes=n_classes))
-        self.blocks.append(SpectralNormGenBlock(ch * 8, ch * 4, n_classes=n_classes))
-        self.blocks.append(SpectralNormGenBlock(ch * 4, ch * 2, n_classes=n_classes))
-        self.blocks.append(SpectralNormGenBlock(ch * 2, ch, n_classes=n_classes))
-        self.last_conv = sn_conv2d(ch, 3, ksize=3, pad=1, init_gain=1)
+        super().__init__(init_gen_layers_64, ch, dim_z, n_classes)
 
 
-class SNGenerator32(BaselineGenerator32):
+class BaselineGenerator32(BaseGenerator):
     def __init__(self, ch=256, dim_z=128, n_classes=10):
-        super().__init__(ch, dim_z, n_classes)
-
-    def initLayers(self, ch, n_classes):
-        self.linear = sn_linear(self.dim_z, (self.bottom_width ** 2) * ch, l_bias=False)
-        self.blocks.append(SpectralNormGenBlock(ch, ch, n_classes=n_classes))
-        self.blocks.append(SpectralNormGenBlock(ch, ch, n_classes=n_classes))
-        self.blocks.append(SpectralNormGenBlock(ch, ch, n_classes=n_classes))
-        self.last_conv = sn_conv2d(ch, 3, ksize=3, pad=1, init_gain=1)
+        super().__init__(init_gen_layers_32, ch, dim_z, n_classes)
 
 
-class SaganGenerator(SNGenerator):
-    def __init__(self, feat_k, ch=64, dim_z=128, n_classes=10):
-        super().__init__(ch, dim_z, n_classes)
+class SNGenerator(BaseGenerator):
+    def __init__(self, ch=64, dim_z=128, n_classes=10):
+        super().__init__(init_gen_layers_sn_64, ch, dim_z, n_classes)
 
-        self.attn = SelfAttention(ch * 2)
+
+class SNGenerator32(BaseGenerator):
+    def __init__(self, ch=256, dim_z=128, n_classes=10):
+        super().__init__(init_gen_layers_sn_32, ch, dim_z, n_classes)
+
+
+class BaseGeneratorWithAttention(nn.Module):
+    def __init__(self, init_gen_layers, feat_k, ch, attn_ch, dim_z, n_classes):
+        super().__init__()
+
+        self.bottom_width = 4
+        self.dim_z = dim_z
+        self.n_classes = n_classes
+
+        self.blocks, self.linear, self.last_conv = init_gen_layers(ch, n_classes, dim_z, self.bottom_width)
+
+        self.bn = nn.BatchNorm2d(ch)
+
+        self.attn = SelfAttention(attn_ch)
         self.feat_k = feat_k
 
     def forward(self, z, y):
         h = z
-        h = self.l1(h)
+        h = self.linear(h)
         h = h.reshape(h.shape[0], -1, self.bottom_width, self.bottom_width)  # 4 X 4
 
-        for i in range(np.log2(self.feat_k) - np.log2(self.bottom_width)):
+        for i in range(int(np.log2(self.feat_k) - np.log2(self.bottom_width))):
             h = self.blocks[i](h, y)
 
         h = self.attn(h) # feat_k X feat_k
 
-        for i in range(np.log2(self.feat_k) - np.log2(self.bottom_width), len(self.blocks)):
+        for i in range(int(np.log2(self.feat_k) - np.log2(self.bottom_width)), len(self.blocks)):
             h = self.blocks[i](h, y)
 
-        h = self.block4(h, y) # 64 X 64
-        h = self.b6(h)
+        h = self.bn(h)
         h = F.relu(h)
-        h = torch.tanh(self.l6(h))
+        h = torch.tanh(self.last_conv(h))
         return h
 
 
-class SaganGenerator32(SaganGenerator):
+class SaganGenerator(BaseGeneratorWithAttention):
+    def __init__(self, feat_k, ch=64, dim_z=128, n_classes=10):
+        super().__init__(init_gen_layers_sn_64, feat_k, ch, ch * 2, dim_z, n_classes)
+
+
+class SaganGenerator32(BaseGeneratorWithAttention):
     def __init__(self, feat_k, ch=256, dim_z=128, n_classes=10):
-        super().__init__(feat_k, ch, dim_z, n_classes)
-
-    def initLayers(self, ch, n_classes):
-        self.linear = sn_linear(self.dim_z, (self.bottom_width ** 2) * ch)
-        self.blocks.append(SpectralNormGenBlock(ch, ch, n_classes=n_classes))
-        self.blocks.append(SpectralNormGenBlock(ch, ch, n_classes=n_classes))
-        self.blocks.append(SpectralNormGenBlock(ch, ch, n_classes=n_classes))
-        self.last_conv = sn_conv2d(ch, 3, ksize=3, pad=1, init_gain=1)
-
+        super().__init__(init_gen_layers_sn_32, feat_k, ch, ch, dim_z, n_classes)
 

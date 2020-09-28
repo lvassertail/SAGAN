@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -44,28 +45,48 @@ class DiscriminatorBlock(FirstDiscriminatorBlock):
         return super().forward(h)
 
 
-class SNProjectionDiscriminator(nn.Module):
-    def __init__(self, ch=64, n_classes=10):
+def init_dis_layers_64(ch, n_classes):
+
+    blocks = torch.nn.ModuleList()
+    blocks.append(FirstDiscriminatorBlock(3, ch, True))
+    blocks.append(DiscriminatorBlock(ch, ch * 2, True))
+    blocks.append(DiscriminatorBlock(ch * 2, ch * 4, True))
+    blocks.append(DiscriminatorBlock(ch * 4, ch * 8, True))
+    blocks.append(DiscriminatorBlock(ch * 8, ch * 16, True))
+
+    linear = sn_linear(ch * 16, 1)
+
+    if n_classes > 0:
+        l_y = nn.Embedding(n_classes, ch * 16)
+        init.xavier_uniform_(l_y.weight)
+        utils.spectral_norm(l_y)
+
+    return blocks, linear, l_y
+
+
+def init_dis_layers_32(ch, n_classes):
+
+    blocks = torch.nn.ModuleList()
+    blocks.append(FirstDiscriminatorBlock(3, ch, True))
+    blocks.append(DiscriminatorBlock(ch, ch, True))
+    blocks.append(DiscriminatorBlock(ch, ch, False))
+    blocks.append(DiscriminatorBlock(ch, ch, False))
+
+    linear = sn_linear(ch, 1, l_bias=False)
+
+    if n_classes > 0:
+        l_y = nn.Embedding(n_classes, ch)
+        init.xavier_uniform_(l_y.weight)
+        utils.spectral_norm(l_y)
+
+    return blocks, linear, l_y
+
+
+class BaseSNProjectionDiscriminator(nn.Module):
+    def __init__(self, init_dis_layers, ch, n_classes):
         super().__init__()
 
-        self.initLayers(ch, n_classes)
-
-    def initLayers(self, ch, n_classes):
-
-        self.blocks = torch.nn.ModuleList()
-
-        self.blocks.append(FirstDiscriminatorBlock(3, ch, True))
-        self.blocks.append(DiscriminatorBlock(ch, ch * 2, True))
-        self.blocks.append(DiscriminatorBlock(ch * 2, ch * 4, True))
-        self.blocks.append(DiscriminatorBlock(ch * 4, ch * 8, True))
-        self.blocks.append(DiscriminatorBlock(ch * 8, ch * 16, True))
-
-        self.linear = sn_linear(ch * 16, 1)
-
-        if n_classes > 0:
-            self.l_y = nn.Embedding(n_classes, ch * 16)
-            init.xavier_uniform_(self.l_y.weight)
-            utils.spectral_norm(self.l_y)
+        self.blocks, self.linear, self.l_y = init_dis_layers(ch, n_classes)
 
     def forward(self, x, y=None):
         h = x
@@ -80,44 +101,54 @@ class SNProjectionDiscriminator(nn.Module):
         return output
 
 
-class SNProjectionDiscriminator32(SNProjectionDiscriminator):
-
-    def initLayers(self, ch, n_classes):
-        self.blocks = torch.nn.ModuleList()
-
-        self.blocks.append(FirstDiscriminatorBlock(3, ch, True))
-        self.blocks.append(DiscriminatorBlock(ch, ch, True))
-        self.blocks.append(DiscriminatorBlock(ch, ch, False))
-        self.blocks.append(DiscriminatorBlock(ch, ch, False))
-
-        self.linear = sn_linear(ch, 1, l_bias=False)
-
-        if n_classes > 0:
-            self.l_y = nn.Embedding(n_classes, ch)
-            init.xavier_uniform_(self.l_y.weight)
-            utils.spectral_norm(self.l_y)
-
-
-class SaganDiscriminator(SNProjectionDiscriminator):
+class SNProjectionDiscriminator(BaseSNProjectionDiscriminator):
     def __init__(self, ch=64, n_classes=10):
-        super().__init__(ch, n_classes)
+        super().__init__(init_dis_layers_64, ch, n_classes)
+
+
+class SNProjectionDiscriminator32(BaseSNProjectionDiscriminator):
+    def __init__(self, ch=128, n_classes=10):
+        super().__init__(init_dis_layers_32, ch, n_classes)
+
+
+class BaseSaganDiscriminator(nn.Module):
+
+    def __init__(self, init_dis_layers, feat_k, imsize, ch, n_classes):
+        super().__init__()
+
+        self.blocks, self.linear, self.l_y = init_dis_layers(ch, n_classes)
 
         self.attn = SelfAttention(ch)
+        self.feat_k = feat_k
+        self.imsize = imsize
 
     def forward(self, x, y=None):
-        h = x  # 64 * 64
-        h = self.block1(h)  # 32 * 32
 
-        h = self.attn(h)  # 32 * 32
+        h = x  # imsize * imsize
 
-        h = self.block2(h)  # 16 * 16
-        h = self.block3(h)  # 8 * 8
-        h = self.block4(h)  # 4 * 4
-        h = self.block5(h)  # 2 * 2
+        for i in range(int(np.log2(self.imsize) - np.log2(self.feat_k))):
+            h = self.blocks[i](h)
+
+        h = self.attn(h)  # feat_k * feat_k
+
+        for i in range(int(np.log2(self.imsize) - np.log2(self.feat_k)), len(self.blocks)):
+            h = self.blocks[i](h)
+
         h = F.relu(h)
         h = h.sum([2, 3])
-        output = self.l6(h)
+        output = self.linear(h)
         if y is not None:
             w_y = self.l_y(y)
             output = output + (w_y * h).sum(dim=1, keepdim=True)
         return output
+
+
+class SaganDiscriminator(BaseSaganDiscriminator):
+    def __init__(self, feat_k, imsize, ch=64, n_classes=10):
+        super().__init__(init_dis_layers_64, feat_k, imsize, ch, n_classes)
+
+
+class SaganDiscriminator32(BaseSaganDiscriminator):
+    def __init__(self, feat_k, ch=128, n_classes=10):
+        super().__init__(init_dis_layers_32, feat_k, 32, ch, n_classes)
+
