@@ -10,6 +10,7 @@ def get_parameters():
     # Model hyper-parameters
     parser.add_argument('--model', type=str, default='sagan', choices=['baseline', 'sn_on_g_d', 'sn_on_g_d_ttur', 'sagan'])
     parser.add_argument('--im_size', type=int, default=64) #32
+    parser.add_argument('--im_center_corp', type=int, default=0) #0 means - no center corp for images
     parser.add_argument('--z_dim', type=int, default=128)
     parser.add_argument('--g_ch', type=int, default=64) #256
     parser.add_argument('--d_ch', type=int, default=64) #128
@@ -30,7 +31,7 @@ def get_parameters():
     parser.add_argument('--beta2', type=float, default=0.9)
 
     # Misc
-    parser.add_argument('--dataset', type=str, default='cifar', choices=['lsun', 'cifar', 'gwb', 'celeb'])
+    parser.add_argument('--dataset', type=str, default='cifar', choices=['lsun', 'cifar', 'gwb', 'celeba'])
     parser.add_argument('--use_tensorboard', type=str2bool, default=False)
 
     # Path
@@ -42,7 +43,8 @@ def get_parameters():
 
     # epoch size
     parser.add_argument('--calc_score_step', type=int, default=500)
-    parser.add_argument('--model_save_step', type=float, default=15000)
+    parser.add_argument('--model_save_epoch', type=float, default=2)
+    parser.add_argument('--sample_save_step', type=float, default=1000)
 
 
     return parser.parse_args()

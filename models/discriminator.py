@@ -56,6 +56,7 @@ def init_dis_layers_64(ch, n_classes):
 
     linear = sn_linear(ch * 16, 1)
 
+    l_y = None
     if n_classes > 0:
         l_y = nn.Embedding(n_classes, ch * 16)
         init.xavier_uniform_(l_y.weight)
@@ -74,6 +75,7 @@ def init_dis_layers_32(ch, n_classes):
 
     linear = sn_linear(ch, 1, l_bias=False)
 
+    l_y = None
     if n_classes > 0:
         l_y = nn.Embedding(n_classes, ch)
         init.xavier_uniform_(l_y.weight)

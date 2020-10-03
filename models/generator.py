@@ -13,21 +13,27 @@ class BaseGenBlock(nn.Module):
 
         self.init_conv(in_channels, out_channels)
 
-        self.b1 = ConditionalBatchNorm(in_channels, n_classes)
-        self.b2 = ConditionalBatchNorm(out_channels, n_classes)
+        self.n_classes = n_classes
+
+        if self.n_classes > 0:
+            self.b1 = ConditionalBatchNorm(in_channels, n_classes)
+            self.b2 = ConditionalBatchNorm(out_channels, n_classes)
+        else:
+            self.b1 = nn.BatchNorm2d(in_channels)
+            self.b2 = nn.BatchNorm2d(out_channels)
 
     def init_conv(self, in_channels, out_channels):
         self.c1 = conv2d(in_channels, out_channels, ksize=3, pad=1, init_gain=(2**0.5))
         self.c2 = conv2d(out_channels, out_channels, ksize=3, pad=1, init_gain=(2**0.5))
         self.c_sc = conv2d(in_channels, out_channels, ksize=1, pad=0, init_gain=1.0)
 
-    def forward(self, x, y):
+    def forward(self, x, y=None):
         h = x
-        h = self.b1(h, y)
+        h = self.b1(h, y) if self.n_classes > 0 else self.b1(h)
         h = F.relu(h)
         h = F.interpolate(h, scale_factor=2)
         h = self.c1(h)
-        h = self.b2(h, y)
+        h = self.b2(h, y) if self.n_classes > 0 else self.b2(h)
         h = F.relu(h)
         h = self.c2(h)
 
@@ -109,7 +115,7 @@ class BaseGenerator(nn.Module):
 
         self.bn = nn.BatchNorm2d(ch)
 
-    def forward(self, z, y):
+    def forward(self, z, y=None):
         h = z
         h = self.linear(h)
         h = h.reshape(h.shape[0], -1, self.bottom_width, self.bottom_width)
@@ -158,7 +164,7 @@ class BaseGeneratorWithAttention(nn.Module):
         self.attn = SelfAttention(attn_ch)
         self.feat_k = feat_k
 
-    def forward(self, z, y):
+    def forward(self, z, y=None):
         h = z
         h = self.linear(h)
         h = h.reshape(h.shape[0], -1, self.bottom_width, self.bottom_width)  # 4 X 4

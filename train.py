@@ -15,9 +15,8 @@ def train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Data loader
-    data_loader = DataLoader(config.dataset, config.image_path, config.im_size, config.batch_size, shuf=True)
-    dl = data_loader.load()
-    n_classes = len(dl.dataset.classes)
+    data_loader = DataLoader(config.dataset, config.image_path, config.im_size, config.batch_size, config.im_center_corp, shuf=True)
+    dl, n_classes = data_loader.load()
 
     samples_dir = make_folder(config.sample_path, config.version)
     checkpoint_dir = make_folder(config.model_save_path, config.version)
@@ -27,10 +26,11 @@ def train():
 
     evaluator = Inception(5000, 100, 1, device)
 
+    labeled = True if n_classes > 0 else False
     trainer = Trainer(dl, gen, dis, gen_optimizer, dis_optimizer, config.num_epochs,
-                      evaluator, checkpoint_dir, samples_dir, config.model_save_step,
-                      config.calc_score_step, config.version,
-                      device, checkpoint_data)
+                      evaluator, checkpoint_dir, samples_dir, config.model_save_epoch,
+                      config.calc_score_step, config.sample_save_step, config.version,
+                      device, checkpoint_data, labeled)
 
     trainer.train()
 
@@ -78,7 +78,6 @@ def create_model(checkpoint_dir, n_classes, device):
                 gen = SaganGenerator(feat_k=config.feat_k, ch=config.g_ch, dim_z=config.z_dim, n_classes=n_classes).to(device)
                 dis = SaganDiscriminator(feat_k=config.feat_k, imsize=config.im_size, ch=config.d_ch, n_classes=n_classes).to(device)
 
-
     # optimizers
     gen_optimizer = create_optimizer(gen.parameters(), gen_lr)
     dis_optimizer = create_optimizer(dis.parameters(), dis_lr)
@@ -88,7 +87,7 @@ def create_model(checkpoint_dir, n_classes, device):
 
     checkpoint_file_final = os.path.join(checkpoint_dir, config.final_checkpoint_name)
     if (config.load_checkpoint and os.path.isfile(checkpoint_file_final)):
-        print('*** Loading final checkpoint file instead of training')
+        print('*** Loading final checkpoint file %s' % config.final_checkpoint_name)
 
         checkpoint = torch.load(checkpoint_file_final, map_location=device)
 

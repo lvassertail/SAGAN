@@ -11,12 +11,13 @@ import tarfile
 
 
 class DataLoader():
-    def __init__(self, dataset, image_path, image_size, batch_size, shuf=True):
+    def __init__(self, dataset, image_path, image_size, batch_size, center_corp=0, shuf=True):
         self.dataset = dataset
         self.path = image_path
         self.imsize = image_size
         self.batch = batch_size
         self.shuf = shuf
+        self.center_corp = center_corp
 
     def download_data(self, out_path, url, extract=True, force=False):
         pathlib.Path(out_path).mkdir(exist_ok=True)
@@ -55,12 +56,13 @@ class DataLoader():
 
         return out_filename, extracted_dir
 
-    def transform(self, resize, totensor, normalize, centercrop):
+    def transform(self, resize, totensor, normalize):
         options = []
-        if centercrop:
-            options.append(transforms.CenterCrop(160))
+        if self.center_corp > 0:
+            options.append(transforms.CenterCrop(self.center_corp))
+            #options.append(transforms.CenterCrop(self.imsize))
         if resize:
-            options.append(transforms.Resize((self.imsize,self.imsize)))
+            options.append(transforms.Resize((self.imsize, self.imsize)))
         if totensor:
             options.append(transforms.ToTensor())
         if normalize:
@@ -69,43 +71,44 @@ class DataLoader():
         return transform
 
     def load_lsun(self, classes='church_outdoor_train'):
-        transforms = self.transform(True, True, True, False)
-        dataset = dsets.LSUN(self.path, classes=[classes], transform=transforms)
-        return dataset
+        transforms = self.transform(True, True, True)
+        dataset = dsets.LSUN(self.path + '/lsun', classes=[classes], transform=transforms)
+        return dataset, 0
 
-    def load_celeb(self):
-        transforms = self.transform(True, True, True, True)
-        dataset = dsets.ImageFolder(self.path+'/CelebA', transform=transforms)
-        return dataset
+    def load_celeba(self):
+        transforms = self.transform(True, True, True)  #, True)
+        #dataset = dsets.ImageFolder(self.path+'/CelebA', transform=transforms)
+        dataset = dsets.CelebA(self.path+'/CelebA', transform=transforms) #, split='all')
+        return dataset, 0
 
     def load_cifar(self):
-        transforms = self.transform(True, True, True, False)
+        transforms = self.transform(False, True, True)  #, False)
         cifar10_train_ds = dsets.CIFAR10(root=self.path+'/cifar-10/', download=True, train=True,
                                          transform=transforms)
 
         print('Number of samples:', len(cifar10_train_ds))
-        return cifar10_train_ds
+        return cifar10_train_ds, 10
 
     def load_gwb(self):
         DATA_URL = 'http://vis-www.cs.umass.edu/lfw/lfw-bush.zip'
         _, dataset_dir = self.download_data(out_path=self.path+'/gwb', url=DATA_URL, extract=True, force=False)
-        transforms = self.transform(True, True, True, False)
+        transforms = self.transform(True, True, True)  #, False)
 
         ds_gwb = dsets.ImageFolder(os.path.dirname(dataset_dir), transforms)
-        return ds_gwb
+        return ds_gwb, 0
 
     def load(self):
         if self.dataset == 'lsun':
-            dataset = self.load_lsun()
-        elif self.dataset == 'celeb':
-            dataset = self.load_celeb()
+            dataset, n_classes = self.load_lsun()
+        elif self.dataset == 'celeba':
+            dataset, n_classes = self.load_celeba()
         elif self.dataset == 'cifar':
-            dataset = self.load_cifar()
+            dataset, n_classes = self.load_cifar()
         elif self.dataset == 'gwb':
-            dataset = self.load_gwb()
+            dataset, n_classes = self.load_gwb()
 
         loader = torch.utils.data.DataLoader(dataset=dataset,
                                              batch_size=self.batch,
                                              shuffle=self.shuf)
-        return loader
+        return loader, n_classes
 

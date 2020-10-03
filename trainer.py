@@ -12,8 +12,8 @@ from utils import *
 class Trainer():
 
     def __init__(self, data_loader, gen, dis, gen_optimizer, dis_optimizer, num_epochs,
-                 evaluator, checkpoint_dir, samples_dir, model_save_step,
-                 calc_score_step, version, device, checkpoint_data):
+                 evaluator, checkpoint_dir, samples_dir, model_save_epoch,
+                 calc_score_step, sample_save_step, version, device, checkpoint_data, labeled):
 
         self.data_loader = data_loader
         self.batch_size = data_loader.batch_size
@@ -26,14 +26,16 @@ class Trainer():
         self.num_epochs = num_epochs
         self.evaluator = evaluator
 
-        self.model_save_step = model_save_step
+        self.model_save_epoch = model_save_epoch
         self.calc_score_step = calc_score_step
+        self.sample_save_step = sample_save_step
         self.checkpoint_dir = checkpoint_dir
         self.samples_dir = samples_dir
 
         self.device = device
         self.version = version
 
+        self.labeled = labeled
         self.fixed_noise, self.fixed_y = self.sample_noises()
         self.n_sample_row = max(int(math.sqrt(self.batch_size)), 1)
 
@@ -66,10 +68,13 @@ class Trainer():
 
             with tqdm.tqdm(total=len(self.data_loader.batch_sampler), file=sys.stdout) as pbar:
                 for batch_idx, (x_real, y_real) in enumerate(self.data_loader):
-                    step_idx += 1
 
                     x_real = x_real.to(self.device)
-                    y_real = y_real.to(self.device)
+
+                    if self.labeled:
+                        y_real = y_real.to(self.device)
+                    else:
+                        y_real = None
 
                     dis_loss, gen_loss = self.train_batch(x_real, y_real)
 
@@ -78,11 +83,16 @@ class Trainer():
 
                     self.evaluate_model(epoch_idx, saved_scores_steps, saved_scores, step_idx, epoch_logs)
 
+                    step_idx += 1
                     pbar.update()
 
             dsc_avg_loss, gen_avg_loss = np.mean(dsc_losses), np.mean(gen_losses)
             self.print_and_save(f'Discriminator loss: {dsc_avg_loss}', epoch_logs)
             self.print_and_save(f'Generator loss:     {gen_avg_loss}', epoch_logs)
+
+            # save checkpoint
+            if (epoch_idx + 1 - self.start_from_epoch) % self.model_save_epoch == 0:
+                self.save_model(epoch_idx, epoch_logs, saved_scores, saved_scores_steps, step_idx)
 
             self.write_to_logs(epoch_logs)
             epoch_logs.clear()
@@ -95,13 +105,17 @@ class Trainer():
 
         self.gen.eval()
 
-        current_step = step_idx - self.start_from_step
+        current_step = step_idx + 1 - self.start_from_step
 
         if current_step % self.calc_score_step == 0:
             self.calc_score(epoch_idx, epoch_logs, saved_scores, saved_scores_steps, step_idx)
 
-        if current_step % self.model_save_step == 0:
-            self.save_model(epoch_idx, epoch_logs, saved_scores, saved_scores_steps, step_idx)
+        if current_step % self.sample_save_step == 0:
+            # save sample
+            fake = self.gen_samples()
+            save_image(fake, os.path.join(self.samples_dir, '{}_fake.png'.format(step_idx + 1)),
+                       nrow=self.n_sample_row, padding=2)
+            self.print_and_save("[%d] Sample image was saved" % (step_idx + 1), epoch_logs)
 
         self.gen.train()
 
@@ -122,12 +136,6 @@ class Trainer():
         # save plot
         save_scores_plot(self.checkpoint_dir, self.version, saved_scores_steps, saved_scores, epoch_idx + 1)
         self.print_and_save("[%d] Checkpoint and plot were saved" % (epoch_idx + 1), epoch_logs)
-
-        # save sample
-        fake = self.gen_samples()
-        save_image(fake, os.path.join(self.samples_dir, '{}_fake.png'.format(epoch_idx + 1)),
-               nrow=self.n_sample_row, padding=2)
-        self.print_and_save("[%d] Sample image was saved" % (epoch_idx + 1), epoch_logs)
 
     def calc_score(self, epoch_idx, epoch_logs, saved_scores, saved_scores_steps, step_idx):
         score, _ = self.evaluator.eval_gen(self.gen)
@@ -152,12 +160,18 @@ class Trainer():
 
     def sample_noises(self):
         fake_noise = torch.randn(self.batch_size, self.gen.dim_z, dtype=torch.float, device=self.device)
-        fake_y = torch.randint(low=0, high=self.gen.n_classes, size=(self.batch_size,), dtype=torch.long,
-                               device=self.device)
 
+        fake_y = None
+        if self.labeled:
+            fake_y = torch.randint(low=0, high=self.gen.n_classes, size=(self.batch_size,), dtype=torch.long,
+                                   device=self.device)
         return fake_noise, fake_y
 
     def train_batch(self, x_real, y_real):
+
+        ######################
+        # Generator update
+        ######################
 
         self.gen_optimizer.zero_grad()
 
@@ -168,6 +182,10 @@ class Trainer():
 
         loss_gen.backward()
         self.gen_optimizer.step()
+
+        ######################
+        # Discriminator update
+        ######################
 
         z_fake, y_fake = self.sample_noises()
         self.dis.zero_grad()
