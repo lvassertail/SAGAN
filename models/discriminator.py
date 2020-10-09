@@ -6,7 +6,7 @@ import torch.nn.init as init
 import torch.nn.utils as utils
 from models.layers import *
 from models.self_attention import SelfAttention
-#from models.self_attention import SelfAttentionOld
+
 
 class FirstDiscriminatorBlock(nn.Module):
     def __init__(self, in_channels, out_channels, downsample):
@@ -115,12 +115,12 @@ class SNProjectionDiscriminator32(BaseSNProjectionDiscriminator):
 
 class BaseSaganDiscriminator(nn.Module):
 
-    def __init__(self, init_dis_layers, feat_k, imsize, ch, n_classes):
+    def __init__(self, init_dis_layers, feat_k, imsize, ch, attn_ch, n_classes):
         super().__init__()
 
         self.blocks, self.linear, self.l_y = init_dis_layers(ch, n_classes)
 
-        self.attn = SelfAttention(ch)
+        self.attn = SelfAttention(attn_ch)
         self.feat_k = feat_k
         self.imsize = imsize
 
@@ -147,10 +147,12 @@ class BaseSaganDiscriminator(nn.Module):
 
 class SaganDiscriminator(BaseSaganDiscriminator):
     def __init__(self, feat_k, imsize, ch=64, n_classes=10):
-        super().__init__(init_dis_layers_64, feat_k, imsize, ch, n_classes)
+        num_of_blocks_before_attn = int(np.log2(imsize) - np.log2(feat_k))
+        attn_ch = ch * (2 ** (num_of_blocks_before_attn - 1))
+        super().__init__(init_dis_layers_64, feat_k, imsize, ch, attn_ch, n_classes)
 
 
 class SaganDiscriminator32(BaseSaganDiscriminator):
     def __init__(self, feat_k, ch=128, n_classes=10):
-        super().__init__(init_dis_layers_32, feat_k, 32, ch, n_classes)
+        super().__init__(init_dis_layers_32, feat_k, 32, ch, ch, n_classes)
 

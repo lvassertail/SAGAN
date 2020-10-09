@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from models.conditional_batch_norm import ConditionalBatchNorm
 from models.layers import *
 from models.self_attention import SelfAttention
-#from models.self_attention import SelfAttentionOld
+
 
 class BaseGenBlock(nn.Module):
     def __init__(self, in_channels, out_channels, n_classes):
@@ -150,10 +150,10 @@ class SNGenerator32(BaseGenerator):
 
 
 class BaseGeneratorWithAttention(nn.Module):
-    def __init__(self, init_gen_layers, feat_k, ch, attn_ch, dim_z, n_classes):
+    def __init__(self, init_gen_layers, feat_k, ch, attn_ch, bottom_width, dim_z, n_classes):
         super().__init__()
 
-        self.bottom_width = 4
+        self.bottom_width = bottom_width
         self.dim_z = dim_z
         self.n_classes = n_classes
 
@@ -185,10 +185,13 @@ class BaseGeneratorWithAttention(nn.Module):
 
 class SaganGenerator(BaseGeneratorWithAttention):
     def __init__(self, feat_k, ch=64, dim_z=128, n_classes=10):
-        super().__init__(init_gen_layers_sn_64, feat_k, ch, ch * 2, dim_z, n_classes)
+        bottom_width = 4
+        num_of_blocks_before_attn = int(np.log2(feat_k) - np.log2(bottom_width))
+        attn_ch = int(ch * 16 / (2 ** num_of_blocks_before_attn))
+        super().__init__(init_gen_layers_sn_64, feat_k, ch, attn_ch, bottom_width, dim_z, n_classes)
 
 
 class SaganGenerator32(BaseGeneratorWithAttention):
     def __init__(self, feat_k, ch=256, dim_z=128, n_classes=10):
-        super().__init__(init_gen_layers_sn_32, feat_k, ch, ch, dim_z, n_classes)
+        super().__init__(init_gen_layers_sn_32, feat_k, ch, ch, 4, dim_z, n_classes)
 
