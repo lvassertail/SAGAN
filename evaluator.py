@@ -69,16 +69,3 @@ class Inception(object):
         m_scores, m_std = self.kl_scores(ys)
         return m_scores, m_std
 
-    def eval_dataset(self, dataset):
-        ys = []
-        for i in range(self.n_batches):
-            batch_images = dataset.get_next()
-            if isinstance(batch_images, list):
-                batch_images = batch_images[0]
-            batch_images = batch_images.to(self.device)
-            y = self.inception_softmax(batch_images)
-            ys.append(y)
-        ys = torch.cat(ys, 0)
-        m_scores, m_std = self.kl_scores(ys)
-        return m_scores, m_std
-
