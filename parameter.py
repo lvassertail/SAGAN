@@ -34,7 +34,7 @@ def get_parameters():
     parser.add_argument('--dataset', type=str, default='cifar', choices=['lsun', 'cifar', 'gwb', 'celeba'])
 
     # Path
-    parser.add_argument('--image_path', type=str, default='./data')
+    parser.add_argument('--data_path', type=str, default='./data')
     parser.add_argument('--model_save_path', type=str, default='./checkpoints')
     parser.add_argument('--sample_path', type=str, default='./samples')
 

@@ -15,7 +15,7 @@ def train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Data loader
-    data_loader = DataLoader(config.dataset, config.image_path, config.im_size, config.batch_size, config.im_center_corp, shuf=True)
+    data_loader = DataLoader(config.dataset, config.data_path, config.im_size, config.batch_size, config.im_center_corp, shuf=True)
     dl, n_classes = data_loader.load()
 
     samples_dir = make_folder(config.sample_path, config.version)
