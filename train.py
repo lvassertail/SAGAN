@@ -7,7 +7,7 @@ from models.discriminator import *
 from evaluator import Inception
 from parameter import get_parameters
 from trainer import Trainer
-from utils import CheckpointData
+from trainer import CheckpointData
 
 
 def train():

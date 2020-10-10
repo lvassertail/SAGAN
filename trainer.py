@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torchvision.utils import save_image
-from utils import *
+import matplotlib.pyplot as plt
 
 
 class Trainer():
@@ -134,7 +134,7 @@ class Trainer():
                                 '{}_{}.pt'.format(self.version, epoch_idx + 1)))
 
         # save plot
-        save_scores_plot(self.checkpoint_dir, self.version, saved_scores_steps, saved_scores, epoch_idx + 1)
+        self.save_scores_plot(saved_scores_steps, saved_scores, epoch_idx + 1)
         self.print_and_save("[%d] Checkpoint and plot were saved" % (epoch_idx + 1), epoch_logs)
 
     def calc_score(self, epoch_idx, epoch_logs, saved_scores, saved_scores_steps, step_idx):
@@ -142,6 +142,18 @@ class Trainer():
         self.print_and_save("[%d] evaluated inception score: %.4f" % (epoch_idx + 1, score), epoch_logs)
         saved_scores.append(score)
         saved_scores_steps.append(step_idx)
+
+    def save_scores_plot(self, steps, scores, epoch):
+        plt.plot(steps, scores)
+        plt.xlabel('Iteration')
+        plt.ylabel('Inception score')
+        plt.title('IS ' + self.version)
+        #plt.show()
+        plot_name = 'IS_{}_plot_{}.png'.format(self.version, epoch)
+        #plot_name = 'IS_' + model_version + '_plot.png'
+        plot_dir = os.path.join(self.checkpoint_dir, plot_name)
+        plt.savefig(plot_dir)
+
 
     @staticmethod
     def print_and_save(log, epoch_logs):
@@ -214,3 +226,10 @@ class Trainer():
         g_loss_fake = -g_out_fake.mean()
 
         return g_loss_fake
+
+class CheckpointData():
+    def __init__(self, start_from_epoch=0, start_from_step=0, prev_scores_steps=[], prev_scores=[]):
+        self.start_from_epoch = start_from_epoch
+        self.start_from_step = start_from_step
+        self.prev_scores_steps = prev_scores_steps
+        self.prev_scores = prev_scores

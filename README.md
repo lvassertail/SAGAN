@@ -16,6 +16,9 @@ This path can be changed by setting the argument 'model_save_path'.
 generated images are being saved in the default path './samples'.
 This path can be changed by setting the argument 'sample_path'.
 
+* To start training from a checkpoint - 
+it's needed to set 'load_checkpoint' to True and 'final_checkpoint_name' to the checkpoint name.
+
 
 Here are the commands for reproducing the experiments:
 
