@@ -6,7 +6,7 @@ for calculating the inception score, and copy it to the project folder:
 https://download.pytorch.org/models/inception_v3_google-1a9a5a14.pth
 (or instead you can run the commands from the path /home/wolf/sagieb/course/liorv/SAGAN, or copy the inception score model from there)
 
-* I used the python environment of homework 4.
+* I used the python environment of homework 4 + pip install lmdb.
 
 * Every 5 epochs (by default, can be set by 'model_save_epoch' argument) 
 a checkpoint, scores graph and a log, are being saved in the default path './checkpoints'. 
