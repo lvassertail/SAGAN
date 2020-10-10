@@ -71,31 +71,3 @@ class InceptionScore():
             split_scores.append(np.exp(np.mean(scores)))
 
         return np.mean(split_scores), np.std(split_scores)
-
-if __name__ == '__main__':
-    class IgnoreLabelDataset(torch.utils.data.Dataset):
-        def __init__(self, orig):
-            self.orig = orig
-
-        def __getitem__(self, index):
-            return self.orig[index][0]
-
-        def __len__(self):
-            return len(self.orig)
-
-    import torchvision.datasets as dset
-    import torchvision.transforms as transforms
-
-    cifar = dset.CIFAR10(root='data/', download=True,
-                             transform=transforms.Compose([
-                                 transforms.Scale(32),
-                                 transforms.ToTensor(),
-                                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                             ])
-    )
-
-    IgnoreLabelDataset(cifar)
-
-    print ("Calculating Inception Score...")
-    ins = InceptionScore('inception_v3_google-1a9a5a14.pth')
-    print (ins.calculate(IgnoreLabelDataset(cifar), batch_size=32, resize=True, splits=10))

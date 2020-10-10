@@ -32,18 +32,15 @@ def get_parameters():
 
     # Misc
     parser.add_argument('--dataset', type=str, default='cifar', choices=['lsun', 'cifar', 'gwb', 'celeba'])
-    parser.add_argument('--use_tensorboard', type=str2bool, default=False)
 
     # Path
     parser.add_argument('--image_path', type=str, default='./data')
-    #parser.add_argument('--log_path', type=str, default='./logs')
     parser.add_argument('--model_save_path', type=str, default='./checkpoints')
     parser.add_argument('--sample_path', type=str, default='./samples')
-    #parser.add_argument('--attn_path', type=str, default='./attn')
 
     # epoch size
     parser.add_argument('--calc_score_step', type=int, default=500)
-    parser.add_argument('--model_save_epoch', type=float, default=2)
+    parser.add_argument('--model_save_epoch', type=float, default=5)
     parser.add_argument('--sample_save_step', type=float, default=1000)
 
 
