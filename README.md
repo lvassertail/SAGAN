@@ -1,6 +1,8 @@
 # SAGAN
 ConvNet Final Project - Self-Attention Generative Adversarial Networks
 
+* The code is also located here: https://github.com/lvassertail/SAGAN
+
 * To run any experiment, you first need to download the following model 
 for calculating the inception score, and copy it to the project folder:
 https://download.pytorch.org/models/inception_v3_google-1a9a5a14.pth
